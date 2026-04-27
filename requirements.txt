@@ -1,0 +1,13 @@
+boto3==1.40.4
+geopandas==1.1.1
+ipyfilechooser==0.6.0
+ipywidgets==8.1.7
+matplotlib==3.10.5
+numpy==2.3.1
+pandas==2.3.1
+plotly==6.3.0
+pyproj==3.7.1
+rasterio==1.4.3
+scipy==1.16.1
+shapely==2.1.1
+pyogrio==0.11.0

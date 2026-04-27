@@ -7,10 +7,10 @@
 ## Overview
 
 This tool implements multicriteria Pareto ranking for critical mineral exploration prioritisation, allowing decision makers to evaluate and visualise trade offs across competing objectives (e.g., critical mineral potential, economic viability, and ESG risk), without needing to assign subjective weights to individual criteria.
-The application includes a vareity of data for Canadian critical mineral prospevtivity and pre-loaded ESG spatial layers, but is fully compatible with any user-supplied geospatial datasets. It is intended as a pre-competitive, high level decision support tool for mineral exploration and regional land-use planning.
+The application includes a variety of data for Canadian critical mineral prospectivity and pre-loaded ESG spatial layers, but is fully compatible with any user-supplied geospatial datasets. It is intended as a pre-competitive, high level decision support tool for mineral exploration and regional land-use planning.
 
 There are two versions of this tool:
-1. Online version hosted by Natural Resrouces Canada (link). This version is limited to the supplied stock data layers for mineral prospectivity, economic constraints, and ESG layers.
+1. Online version hosted by Natural Resources Canada [Access the online tool here](https://dev.d3ty47mwxi69gs.amplifyapp.com). This version is limited to the supplied stock data layers for mineral prospectivity, economic constraints, and ESG layers.
 2. Downloadable JupyterNotebook which allows for users to upload their own data layers.
 
 Both versions have similar plotting and visualization functionalities, and it only the ability for users to provide their own data layers (downloadable JupyterNotebook/Colab). 
@@ -47,9 +47,111 @@ The Pareto algorithm is an iterative ranking algorithm, where the locations are 
 
 ### Online NRCAN CCMPM
 
+The online version is hosted by Natural Resources Canada and provides access to pre-loaded datasets without requiring local installation. [Access the online tool here](https://dev.d3ty47mwxi69gs.amplifyapp.com).
+
 ### Run Locally/Google Colab 
 
+**Google Colab (Recommended for Cloud):**
+1. **Open the read-only version**: [Link to Colab notebook](https://colab.research.google.com/drive/1KSMcBoZAs8WwX6gDSvIT7UJHLBPQBlfj?usp=sharing)
+2. **Make your own copy**: File → Save a copy in Drive
+3. **Run setup cells**: Execute the package installation cell first
+4. **Use the interface**: Select mineral type, priorities, and optionally upload custom data
+5. **Process and visualize**: Click "Upload & Process" to run the analysis
+
+**Local Jupyter/VS Code:**
+1. **Download the notebook**: `ESG_Priority_Mapper.ipynb`
+2. **Open in Jupyter Notebook/Lab or VS Code**
+3. **Install dependencies**: Either run the package installation cell in the notebook or install from `requirements.txt`
+4. **Start analysis**: Follow the interface prompts
+
+**Note**: The notebook automatically detects your environment and configures paths accordingly.
+
 ---
+
+## Technical Documentation
+
+### System Requirements
+
+**Minimum Requirements:**
+- Python 3.10 or higher
+- 8 GB RAM (16 GB recommended for large datasets)
+- 2 GB free disk space for temporary files and outputs
+
+**Recommended for Large Datasets (>1M points):**
+- 16+ GB RAM
+- Multi-core CPU
+- SSD storage
+
+### Technology Stack
+
+**Core Technologies:**
+- **Python 3.10+** — Primary programming language
+- **Jupyter Notebook** — Interactive development environment
+- **Pareto Ranking Algorithm** — Custom implementation with vectorized operations
+
+**Online Version Infrastructure:**
+- **AWS Amplify** — Static web hosting
+- **AWS S3** — Cloud storage for pre-loaded datasets and results (accessed via pre-signed URLs)
+- **HTML/JavaScript** — Web interface using GCWeb (Government of Canada design system)
+- **MapLibre GL JS** — Interactive mapping
+- **Plotly.js** — Interactive charts and visualizations
+
+### Python Library Dependencies
+
+```
+boto3==1.40.4
+geopandas==1.1.1
+ipyfilechooser==0.6.0
+ipywidgets==8.1.7
+matplotlib==3.10.5
+numpy==2.3.1
+pandas==2.3.1
+plotly==6.3.0
+pyproj==3.7.1
+rasterio==1.4.3
+scipy==1.16.1
+shapely==2.1.1
+pyogrio==0.11.0
+```
+
+### Installation
+
+#### Quick Install (Jupyter Notebook)
+The notebook includes an automatic installation cell that handles all dependencies
+
+#### Manual Installation (Command Line)
+
+**Option 1: virtual environment**
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**Option 2: conda environment**
+```bash
+conda create -n esg_mapper python=3.10 -y
+conda activate esg_mapper
+pip install -r requirements.txt
+```
+
+### Architecture Overview
+
+#### Notebook Workflow
+1. **Launch and Setup** — Open the notebook and run the setup cells to prepare the environment.
+2. **Input Selection** — Select built-in layers and optionally add your own raster datasets.
+3. **Data Processing**:
+   - Raster reprojection and alignment
+   - Percentile normalization
+   - Pareto ranking algorithm
+4. **Visualization**:
+   - Static matplotlib outputs
+   - Interactive dashboard with MapLibre GL
+   - Plotly scatter plots for trade-off analysis
+5. **Export** — GeoJSON, GeoTIFF, and HTML outputs
+
+---
+
 ## Datasets
 ### Built-in Datasets
 
@@ -69,9 +171,11 @@ The application ships with the following pre-loaded data layers:
 
 ### Bring Your Own Data
 
-You can replace or supplement the built-in layers with any geospatial datasets in standard formats in the JuypterNotebook version. All layers (.tif) must be in the same coordinate reference system.
+You can replace or supplement the built-in layers with any geospatial datasets in standard formats in the Juypter Notebook version. 
 
-
+**Input Formats:**
+- **Rasters**: GeoTIFF (.tif, .tiff)
+- **Coordinate Systems**: Any valid EPSG code. Built-in layers are reprojected to EPSG:3978 for Canada. When using only custom uploaded rasters, the first uploaded raster defines the reference grid, and subsequent layers are reprojected and aligned to match it.
 ---
 
 ## Output & Visualisation
@@ -90,3 +194,23 @@ The notebook produces the following outputs:
 - PNG figures for all plots
 
 ---
+
+## License
+
+This project is developed by Natural Resources Canada.
+
+**Data Licensing:**
+- Mineral prospectivity models: Open Government License - Canada
+- ESG layers: Various (see individual dataset links)
+- Custom data: Responsibility of user to ensure appropriate usage rights
+
+**Code Licensing:**
+
+
+---
+
+<!-- ## Contact & Support
+
+
+--- -->
+

@@ -1,0 +1,44 @@
+# Build outputs
+build/
+dist/
+
+# Node dependencies
+node_modules/
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs and coverage
+*.log
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+
+# Local secrets / env files
+.env
+.env.*
+!.env.example
+
+# generated Amplify output
+amplify/
+.amplify/
+src/aws-exports.js
+
+# ignore libraries
+src/libraries
