@@ -52,12 +52,17 @@ def lambda_handler(event, context):
                 Params={
                     "Bucket": BUCKET_NAME,
                     "Key": f"{request_id}/pareto_frontier.geojson",
+                    "ResponseContentDisposition": 'attachment; filename="pareto_frontier.geojson"',
                 },
                 ExpiresIn=3600,
             ),
             "rank": s3_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": BUCKET_NAME, "Key": f"{request_id}/pareto_rank.tif"},
+                Params={
+                    "Bucket": BUCKET_NAME,
+                    "Key": f"{request_id}/pareto_rank.tif",
+                    "ResponseContentDisposition": 'attachment; filename="pareto_rank.tif"',
+                },
                 ExpiresIn=3600,
             ),
             "percentiles": s3_client.generate_presigned_url(
@@ -65,6 +70,7 @@ def lambda_handler(event, context):
                 Params={
                     "Bucket": BUCKET_NAME,
                     "Key": f"{request_id}/pareto_percentiles.tif",
+                    "ResponseContentDisposition": 'attachment; filename="pareto_percentiles.tif"',
                 },
                 ExpiresIn=3600,
             ),

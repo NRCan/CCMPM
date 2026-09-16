@@ -1,10 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
   // Replace with your API Gateway endpoint
-  const API_ENDPOINT = "https://31mtood3jj.execute-api.ca-central-1.amazonaws.com/default/GeneratePresignedUrl";
+  const API_ENDPOINT = "https://0r041vdgbb.execute-api.ca-central-1.amazonaws.com/";
 
 
   document.getElementById("uploadBtn").addEventListener("click", async () => {
-    const statusElement = document.getElementById("status");
     const previewImage = document.getElementById("previewImage");
     const buttons = document.getElementById("resultButtons");
 
@@ -17,8 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ⚠️ Validation: Check if at least one priority is selected
     if (selectedPriorities.length === 0) {
-      statusElement.textContent = "⚠️ Please select at least one priority";
-      statusElement.style.color = "red";
+      alert("⚠️ Please select at least one priority");
       return;
     }
 
@@ -43,9 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const requestId = bufferToHex(sigBuffer);
 
     console.log("Request ID:", requestId);  // Debug log
-
-    // Show request ID
-    statusElement.textContent = `Showing results for request ID: ${requestId}`;
+    console.log(`Loading results for request ID: ${requestId}`);
 
     try {
       // Fetch signed URLs from Lambda via API Gateway
@@ -57,8 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const urls = await response.json();
 
-      // Show success status
-      statusElement.textContent = `Showing results for request ID: ${requestId}`;
+      console.log(`Successfully loaded results for request ID: ${requestId}`);
 
       // Show preview image using signed URL
       previewImage.src = urls.preview;
@@ -100,8 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
     } catch (error) {
-      statusElement.textContent = `❌ Error: ${error.message}`;
-      statusElement.style.color = "red";
+      alert(`❌ Error: ${error.message}`);
       console.error("Error fetching signed URLs:", error);
     }
   });

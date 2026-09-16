@@ -10,7 +10,7 @@ This tool implements multicriteria Pareto ranking for critical mineral explorati
 The application includes a variety of data for Canadian critical mineral prospectivity and pre-loaded ESG spatial layers, but is fully compatible with any user-supplied geospatial datasets. It is intended as a pre-competitive, high level decision support tool for mineral exploration and regional land-use planning.
 
 There are two versions of this tool:
-1. Online version hosted by Natural Resources Canada [Access the online tool here](https://dev.d3ty47mwxi69gs.amplifyapp.com). This version is limited to the supplied stock data layers for mineral prospectivity, economic constraints, and ESG layers.
+1. Online version hosted by Natural Resources Canada [Access the online tool here](https://main.d33vprvvpv4hdi.amplifyapp.com/). This version is limited to the supplied stock data layers for mineral prospectivity, economic constraints, and ESG layers.
 2. Downloadable JupyterNotebook which allows for users to upload their own data layers.
 
 Both versions have similar plotting and visualization functionalities, and it only the ability for users to provide their own data layers (downloadable JupyterNotebook/Colab). 
@@ -47,12 +47,12 @@ The Pareto algorithm is an iterative ranking algorithm, where the locations are 
 
 ### Online NRCAN CCMPM
 
-The online version is hosted by Natural Resources Canada and provides access to pre-loaded datasets without requiring local installation. [Access the online tool here](https://dev.d3ty47mwxi69gs.amplifyapp.com).
+The online version is hosted by Natural Resources Canada and provides access to pre-loaded datasets without requiring local installation. [Access the online tool here](https://main.d33vprvvpv4hdi.amplifyapp.com/).
 
 ### Run Locally/Google Colab 
 
 **Google Colab (Recommended for Cloud):**
-1. **Open the read-only version**: [Link to Colab notebook](https://colab.research.google.com/drive/1KSMcBoZAs8WwX6gDSvIT7UJHLBPQBlfj?usp=sharing)
+1. **Open the read-only version**: [Link to Colab notebook](https://colab.research.google.com/drive/1-JGfgXhxV3BtfLgMmCjIB6QA7U4wQMPm?usp=sharing)
 2. **Make your own copy**: File → Save a copy in Drive
 3. **Run setup cells**: Execute the package installation cell first
 4. **Use the interface**: Select mineral type, priorities, and optionally upload custom data

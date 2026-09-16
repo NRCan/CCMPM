@@ -101,69 +101,72 @@
   </main> -->
   <main role="main" property="mainContentOfPage" class="container">
 
-    <h1>Canada ESG Priority Mapper</h1>
+    <h1>Canada critical mineral priority mapper</h1>
 
     <div class="row" style="margin-top: 20px;">
       <!-- LEFT: All controls and status -->
-      <div class="col-md-5">
+      <div class="col-md-5" style="border-right: 2px solid #ccc; padding-right: 30px;">
 
         <!-- Mineral Selection -->
         <section>
-          <h2>Select Mineral Potential</h2>
+          <h2>Select mineral potential</h2>
           <div class="form-group">
-            <label for="mineral">Mineral Type:</label>
             <select id="mineral" class="form-control">
-              <option value="carbonatite_ree">Carbonatite-Hosted REE</option>
-              <option value="cd_zinc">Clastic-Dominated (CD) Zinc</option>
+              <option value="carbonatite_ree">Carbonatite-hosted REE</option>
+              <option value="cd_zinc">Clastic-dominated (CD) zinc</option>
               <option value="graphite">Graphite</option>
-              <option value="magmatic_nickel">Magmatic Nickel</option>
-              <option value="mvt_zinc">Mississippi Valley-Type (MVT) Zinc</option>
-              <option value="pegmatite_lithium">Pegmatite-Hosted Lithium</option>
+              <option value="magmatic_nickel">Magmatic nickel</option>
+              <option value="mvt_zinc">Mississippi valley-type (MVT) zinc</option>
+              <option value="pegmatite_lithium">Pegmatite-hosted lithium</option>
             </select>
           </div>
         </section>
 
         <!-- Priority Checkboxes -->
         <section style="margin-top: 20px;">
-          <h2>Other Priorities</h2>
+          <h2>Select other priorities</h2>
           <div class="checkbox">
             <label>
-              <input type="checkbox" id="infrastructure"> Infrastructure Costs
+              <input type="checkbox" id="infrastructure"> Infrastructure costs
             </label>
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" id="protectedAreas"> Protected-Area Gap Analysis
+              <input type="checkbox" id="protectedAreas"> Protected-area gap analysis
             </label>
           </div>
           <div class="checkbox">
             <label>
-              <input type="checkbox" id="speciesRisk"> Species at Risk Habitats
+              <input type="checkbox" id="speciesRisk"> Species at risk habitats
             </label>
           </div>
         </section>
 
         <!-- Process Button and Status -->
         <section style="margin-top: 20px;">
-          <button id="uploadBtn" class="btn btn-success">Load Results from S3</button>
-          <progress id="stepProgress" max="3" value="0" style="width: 100%; margin-top:10px; display:none;"></progress>
+          <button id="uploadBtn" class="btn btn-success">Get results</button>
+          <!-- <progress id="stepProgress" max="3" value="0" style="width: 100%; margin-top:10px; display:none;"></progress>
           <p id="stepCount" style="display:none;">0/3 steps completed</p>
-          <pre id="status" style="margin-top: 10px; white-space: pre-wrap;"></pre>
+          <pre id="status" style="margin-top: 10px; white-space: pre-wrap;"></pre> -->
         </section>
+
+        <hr style="border-top: 2px solid #ccc; margin: 30px 0;">
+
+        <!-- Download Buttons -->
+        <div id="resultButtons" style="display:none; flex-direction: column; gap: 10px; align-items: flex-start;">
+          <button id="downloadGeojson" class="btn btn-primary">Download frontier (GeoJSON)</button>
+          <button id="downloadRank" class="btn btn-primary">Download pareto rank (GeoTIFF)</button>
+          <button id="downloadPercentiles" class="btn btn-primary">Download pareto percentiles
+            (GeoTIFF)</button>
+          <button id="viewMaplibre" class="btn btn-success">View interactive dashboard</button>
+        </div>
 
       </div>
 
       <!-- RIGHT: Preview image -->
-      <div class="col-md-7">
-        <h2>Results</h2>
+      <div class="col-md-7" style="padding-left: 30px;">
+        <!-- <h2 style="text-align: center; margin-left: -30px;">Results</h2> -->
         <img id="previewImage" src="" alt="Result Map" class="img-responsive" style="display:none; margin-top:10px;" />
-        <div id="resultButtons" style="display:none; margin-top: 15px; flex-direction: column; gap: 10px;">
-          <button id="downloadGeojson" class="btn btn-primary btn-block">Download Frontier (GeoJSON)</button>
-          <button id="downloadRank" class="btn btn-primary btn-block">Download Pareto Rank (GeoTIFF)</button>
-          <button id="downloadPercentiles" class="btn btn-primary btn-block">Download Pareto Percentiles
-            (GeoTIFF)</button>
-          <button id="viewMaplibre" class="btn btn-success btn-block">View Interactive Dashboard</button>
-        </div>
       </div>
     </div>
 

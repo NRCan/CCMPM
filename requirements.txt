@@ -6,8 +6,10 @@ matplotlib==3.10.5
 numpy==2.3.1
 pandas==2.3.1
 plotly==6.3.0
+py7zr==0.22.0
 pyproj==3.7.1
+pyogrio==0.11.0
 rasterio==1.4.3
+requests==2.32.3
 scipy==1.16.1
 shapely==2.1.1
-pyogrio==0.11.0
