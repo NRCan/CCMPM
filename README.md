@@ -208,7 +208,7 @@ This project is developed by Natural Resources Canada.
 - Custom data: Responsibility of user to ensure appropriate usage rights
 
 **Code Licensing:**
-
+- Apache 2.0
 
 ---
 
