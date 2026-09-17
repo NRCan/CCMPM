@@ -1,0 +1,345 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CCMPM ESG Priority Mapper – Amplify hosted frontend + Lambda / API Gateway backend.
+  After deploying this stack, run deploy.ps1 to package the frontend and publish it to
+  the Amplify branch.
+
+# ──────────────────────────────────────────────────────────────────────────────
+Parameters:
+# ──────────────────────────────────────────────────────────────────────────────
+
+  AppName:
+    Type: String
+    Default: ccmpm-esg-mapper
+    Description: Base name for all created resources (no spaces).
+
+  OutputS3Bucket:
+    Type: String
+    Default: aecid-outputfiles-dev
+    Description: Existing S3 bucket that holds the model output files.
+
+# ──────────────────────────────────────────────────────────────────────────────
+Resources:
+# ──────────────────────────────────────────────────────────────────────────────
+
+  # ── IAM Role for Lambda ────────────────────────────────────────────────────
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3PresignedUrlPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:HeadObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${OutputS3Bucket}"
+                  - !Sub "arn:aws:s3:::${OutputS3Bucket}/*"
+
+  # ── Lambda Function ────────────────────────────────────────────────────────
+
+  GeneratePresignedUrlFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AppName}-generate-presigned-url"
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref OutputS3Bucket
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+          from botocore.exceptions import ClientError
+
+          BUCKET_NAME = os.environ.get("BUCKET_NAME", "aecid-outputfiles-dev")
+          s3_client = boto3.client("s3", region_name="ca-central-1")
+
+
+          def lambda_handler(event, context):
+              print("Received event:", json.dumps(event, default=str))
+
+              headers = {
+                  "Access-Control-Allow-Origin": "*",
+                  "Access-Control-Allow-Methods": "GET, OPTIONS",
+                  "Access-Control-Allow-Headers": "Content-Type",
+              }
+
+              if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+                  return {"statusCode": 200, "headers": headers, "body": ""}
+
+              try:
+                  request_id = event.get("pathParameters", {}).get("request_id")
+                  print(f"Request ID: {request_id}")
+
+                  if not request_id:
+                      return {
+                          "statusCode": 400,
+                          "headers": headers,
+                          "body": json.dumps({"error": "Missing request_id"}),
+                      }
+
+                  print(f"Generating signed URLs for request_id: {request_id}")
+
+                  # List all files in the request_id folder
+                  try:
+                      response = s3_client.list_objects_v2(
+                          Bucket=BUCKET_NAME, Prefix=f"{request_id}/"
+                      )
+                  except ClientError as e:
+                      print(f"Error listing objects: {e}")
+                      response = {"Contents": []}
+
+                  # Generate pre-signed URLs for standard files
+                  urls = {
+                      "preview": s3_client.generate_presigned_url(
+                          "get_object",
+                          Params={"Bucket": BUCKET_NAME, "Key": f"{request_id}/result_map.png"},
+                          ExpiresIn=3600,
+                      ),
+                      "geojson": s3_client.generate_presigned_url(
+                          "get_object",
+                          Params={
+                              "Bucket": BUCKET_NAME,
+                              "Key": f"{request_id}/pareto_frontier.geojson",
+                              "ResponseContentDisposition": 'attachment; filename="pareto_frontier.geojson"',
+                          },
+                          ExpiresIn=3600,
+                      ),
+                      "rank": s3_client.generate_presigned_url(
+                          "get_object",
+                          Params={
+                              "Bucket": BUCKET_NAME,
+                              "Key": f"{request_id}/pareto_rank.tif",
+                              "ResponseContentDisposition": 'attachment; filename="pareto_rank.tif"',
+                          },
+                          ExpiresIn=3600,
+                      ),
+                      "percentiles": s3_client.generate_presigned_url(
+                          "get_object",
+                          Params={
+                              "Bucket": BUCKET_NAME,
+                              "Key": f"{request_id}/pareto_percentiles.tif",
+                              "ResponseContentDisposition": 'attachment; filename="pareto_percentiles.tif"',
+                          },
+                          ExpiresIn=3600,
+                      ),
+                      "dashboard": s3_client.generate_presigned_url(
+                          "get_object",
+                          Params={
+                              "Bucket": BUCKET_NAME,
+                              "Key": f"{request_id}/interactive_dashboard.html",
+                          },
+                          ExpiresIn=3600,
+                      ),
+                  }
+
+                  # Find and add pre-signed URLs for chunked files
+                  chunks = []
+                  manifest_found = False
+
+                  if "Contents" in response:
+                      file_list = [obj["Key"].split("/")[-1] for obj in response["Contents"]]
+                      print(f"Files found: {file_list}")
+
+                      for obj in response["Contents"]:
+                          key = obj["Key"]
+                          filename = key.split("/")[-1]
+
+                          # Add chunks_manifest.json
+                          if filename == "chunks_manifest.json":
+                              manifest_found = True
+                              urls["chunks_manifest"] = s3_client.generate_presigned_url(
+                                  "get_object",
+                                  Params={"Bucket": BUCKET_NAME, "Key": key},
+                                  ExpiresIn=3600,
+                              )
+
+                          # Add all chunk files (chunk_0000.geojson, chunk_0001.geojson, etc.)
+                          elif filename.startswith("chunk_") and filename.endswith(".geojson"):
+                              chunk_url = s3_client.generate_presigned_url(
+                                  "get_object",
+                                  Params={"Bucket": BUCKET_NAME, "Key": key},
+                                  ExpiresIn=3600,
+                              )
+                              chunks.append({"filename": filename, "url": chunk_url})
+
+                  # Add chunks array if any chunks were found
+                  if manifest_found and chunks:
+                      # Sort by filename to maintain order
+                      chunks.sort(key=lambda x: x["filename"])
+                      urls["chunks"] = chunks
+                      urls["has_chunks"] = True
+                      print(f"Found {len(chunks)} chunks with manifest")
+                  else:
+                      urls["has_chunks"] = False
+                      # Check if all_points.geojson exists
+                      try:
+                          s3_client.head_object(
+                              Bucket=BUCKET_NAME, Key=f"{request_id}/all_points.geojson"
+                          )
+                          urls["all_points_geojson"] = s3_client.generate_presigned_url(
+                              "get_object",
+                              Params={
+                                  "Bucket": BUCKET_NAME,
+                                  "Key": f"{request_id}/all_points.geojson",
+                              },
+                              ExpiresIn=3600,
+                          )
+                          print("Found single all_points.geojson file")
+                      except ClientError:
+                          print(
+                              "No all_points.geojson or chunks found - dashboard may not load data"
+                          )
+
+                  print("Successfully generated signed URLs")
+                  print(
+                      f"Has chunks: {urls.get('has_chunks')}, Chunk count: {len(chunks) if chunks else 0}"
+                  )
+
+                  return {"statusCode": 200, "headers": headers, "body": json.dumps(urls)}
+
+              except Exception as e:
+                  print("Error:", str(e))
+                  import traceback
+
+                  print(traceback.format_exc())
+                  return {
+                      "statusCode": 500,
+                      "headers": headers,
+                      "body": json.dumps({"error": str(e)}),
+                  }
+
+  # ── API Gateway HTTP API (v2) ──────────────────────────────────────────────
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AppName}-api"
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+        MaxAge: 300
+
+  HttpApiDefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt GeneratePresignedUrlFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  GetPresignedUrlRoute:
+    Type: AWS::ApiGatewayV2::Route
+    DependsOn: LambdaIntegration
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /GeneratePresignedUrl/{request_id}"
+      Target: !Sub "integrations/${LambdaIntegration}"
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt GeneratePresignedUrlFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
+
+  # ── IAM Service Role for Amplify ───────────────────────────────────────────
+
+  AmplifyServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-amplify-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: amplify.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess-Amplify
+
+  # ── Amplify App ────────────────────────────────────────────────────────────
+
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub "${AppName}-frontend"
+      IAMServiceRole: !GetAtt AmplifyServiceRole.Arn
+      # Temporarily disable custom rules to test static file serving
+      # CustomRules:
+      #   - Source: "/<*>"
+      #     Target: "/index.html"
+      #     Status: "404-200"
+      EnvironmentVariables:
+        - Name: API_ENDPOINT
+          Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/GeneratePresignedUrl"
+
+  AmplifyMainBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: main
+      EnableAutoBuild: false
+      EnvironmentVariables:
+        - Name: API_ENDPOINT
+          Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/GeneratePresignedUrl"
+
+# ──────────────────────────────────────────────────────────────────────────────
+Outputs:
+# ──────────────────────────────────────────────────────────────────────────────
+
+  ApiEndpoint:
+    Description: "API Gateway endpoint URL – used by the frontend to fetch pre-signed S3 URLs"
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/GeneratePresignedUrl"
+    Export:
+      Name: !Sub "${AppName}-ApiEndpoint"
+
+  AmplifyAppId:
+    Description: "Amplify App ID – required by deploy.ps1"
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub "${AppName}-AmplifyAppId"
+
+  AmplifyDefaultDomain:
+    Description: "Public URL of the hosted frontend"
+    Value: !Sub "https://main.${AmplifyApp.DefaultDomain}"
+
+  LambdaFunctionName:
+    Description: "Name of the deployed Lambda function"
+    Value: !Ref GeneratePresignedUrlFunction
