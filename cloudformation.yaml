@@ -18,6 +18,18 @@ Parameters:
     Default: aecid-outputfiles-dev
     Description: Existing S3 bucket that holds the model output files.
 
+  RateLimitPerFiveMinutes:
+    Type: Number
+    Default: 10
+    MinValue: 5
+    Description: Max GeneratePresignedUrl requests allowed per client IP per trailing 5-minute window (set low for testing).
+
+  MaxDownloadsPerFile:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Max total times each result file (geojson/rank/percentiles) can be downloaded, across all users - never resets.
+
 # ──────────────────────────────────────────────────────────────────────────────
 Resources:
 # ──────────────────────────────────────────────────────────────────────────────
@@ -50,6 +62,67 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:s3:::${OutputS3Bucket}"
                   - !Sub "arn:aws:s3:::${OutputS3Bucket}/*"
+        - PolicyName: RateLimitTablePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt RateLimitTable.Arn
+        - PolicyName: AssumePresignRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                # Constructed (not !GetAtt) to avoid a circular dependency with PresignRole's trust policy.
+                Resource:
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-presign-role"
+
+  # ── Role assumed per-request to mint IP-restricted presigned URLs ─────────
+
+  PresignRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-presign-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              # Constructed (not !GetAtt) to avoid a circular dependency with LambdaExecutionRole's policy.
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-lambda-role"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3GetObjectOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub "arn:aws:s3:::${OutputS3Bucket}/*"
+
+  # ── Per-IP rate limit tracking table ───────────────────────────────────────
+
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AppName}-rate-limit"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   # ── Lambda Function ────────────────────────────────────────────────────────
 
@@ -65,15 +138,149 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref OutputS3Bucket
+          RATE_LIMIT_TABLE: !Ref RateLimitTable
+          RATE_LIMIT_PER_FIVE_MIN: !Ref RateLimitPerFiveMinutes
+          MAX_DOWNLOADS_PER_FILE: !Ref MaxDownloadsPerFile
+          PRESIGN_ROLE_ARN: !GetAtt PresignRole.Arn
       Code:
         ZipFile: |
           import json
           import os
+          import time
+          import secrets
           import boto3
           from botocore.exceptions import ClientError
 
           BUCKET_NAME = os.environ.get("BUCKET_NAME", "aecid-outputfiles-dev")
+          RATE_LIMIT_TABLE = os.environ.get("RATE_LIMIT_TABLE")
+          RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_FIVE_MIN", "5"))
+          MAX_DOWNLOADS_PER_FILE = int(os.environ.get("MAX_DOWNLOADS_PER_FILE", "10"))
+          PRESIGN_ROLE_ARN = os.environ.get("PRESIGN_ROLE_ARN")
+          WINDOW_SECONDS = 300
+          AWS_REGION = os.environ.get("AWS_REGION", "ca-central-1")
+
           s3_client = boto3.client("s3", region_name="ca-central-1")
+          sts_client = boto3.client("sts", region_name="ca-central-1")
+          dynamodb = boto3.resource("dynamodb", region_name="ca-central-1")
+          rate_limit_table = dynamodb.Table(RATE_LIMIT_TABLE) if RATE_LIMIT_TABLE else None
+
+
+          def get_ip_scoped_s3_client(source_ip):
+              """Returns an S3 client whose presigned URLs are only honoured when used from source_ip."""
+              if not PRESIGN_ROLE_ARN or not source_ip:
+                  return s3_client
+
+              session_policy = {
+                  "Version": "2012-10-17",
+                  "Statement": [{
+                      "Effect": "Allow",
+                      "Action": "s3:GetObject",
+                      "Resource": f"arn:aws:s3:::{BUCKET_NAME}/*",
+                      "Condition": {"IpAddress": {"aws:SourceIp": f"{source_ip}/32"}},
+                  }],
+              }
+              try:
+                  creds = sts_client.assume_role(
+                      RoleArn=PRESIGN_ROLE_ARN,
+                      RoleSessionName="presign",
+                      Policy=json.dumps(session_policy),
+                      DurationSeconds=900,
+                  )["Credentials"]
+              except ClientError as e:
+                  print(f"Could not scope presigned URL to {source_ip}, falling back: {e}")
+                  return s3_client
+
+              return boto3.client(
+                  "s3",
+                  region_name="ca-central-1",
+                  aws_access_key_id=creds["AccessKeyId"],
+                  aws_secret_access_key=creds["SecretAccessKey"],
+                  aws_session_token=creds["SessionToken"],
+              )
+
+
+          def check_rate_limit(source_ip):
+              """Returns (allowed, request_count) for source_ip in the current 5-min window."""
+              if not rate_limit_table or not source_ip:
+                  return True, 0
+
+              window_start = int(time.time() // WINDOW_SECONDS) * WINDOW_SECONDS
+              key = f"{source_ip}#{window_start}"
+              expires_at = window_start + WINDOW_SECONDS + 60
+
+              response = rate_limit_table.update_item(
+                  Key={"pk": key},
+                  UpdateExpression="ADD req_count :incr SET expires_at = if_not_exists(expires_at, :exp)",
+                  ExpressionAttributeValues={":incr": 1, ":exp": expires_at},
+                  ReturnValues="UPDATED_NEW",
+              )
+              count = int(response["Attributes"]["req_count"])
+              return count <= RATE_LIMIT, count
+
+
+          def check_download_limit(request_id, filename, token):
+              """Counter per request_id+filename+token (one token per 'Get results' click);
+              expires after 24h so re-generating gives a fresh set of downloads."""
+              if not rate_limit_table:
+                  return True, 0
+
+              key = f"dl#{request_id}#{filename}#{token}"
+              expires_at = int(time.time()) + 86400
+              response = rate_limit_table.update_item(
+                  Key={"pk": key},
+                  UpdateExpression="ADD click_count :incr SET expires_at = if_not_exists(expires_at, :exp)",
+                  ExpressionAttributeValues={":incr": 1, ":exp": expires_at},
+                  ReturnValues="UPDATED_NEW",
+              )
+              count = int(response["Attributes"]["click_count"])
+              return count <= MAX_DOWNLOADS_PER_FILE, count
+
+
+          # Only these are "download button" clicks subject to the per-generation cap;
+          # everything else routed through /Download is logged only, never blocked.
+          ATTACHMENT_FILES = {"pareto_frontier.geojson", "pareto_rank.tif", "pareto_percentiles.tif"}
+          UNLIMITED_FILES_PREFIXES = ("chunk_",)
+          UNLIMITED_FILES = {"result_map.png", "all_points.geojson", "chunks_manifest.json"}
+
+
+          def is_unlimited_file(filename):
+              return filename in UNLIMITED_FILES or filename.startswith(UNLIMITED_FILES_PREFIXES)
+
+
+          def handle_download(event, headers):
+              path_params = event.get("pathParameters", {}) or {}
+              request_id = path_params.get("request_id")
+              filename = path_params.get("filename")
+              source_ip = event.get("requestContext", {}).get("http", {}).get("sourceIp")
+              token = (event.get("queryStringParameters") or {}).get("token")
+
+              if not request_id or not filename or "/" in filename or ".." in filename:
+                  return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Invalid download request"})}
+
+              if not token and not is_unlimited_file(filename):
+                  return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Invalid or expired download link"})}
+
+              allowed, count = check_download_limit(request_id, filename, token)
+              if is_unlimited_file(filename):
+                  print(f"DOWNLOAD LOG (unlimited) - request_id={request_id} filename={filename} count={count}")
+              elif not allowed:
+                  print(f"DOWNLOAD LIMIT BLOCKED - request_id={request_id} filename={filename} token={token} count={count} limit={MAX_DOWNLOADS_PER_FILE}")
+                  return {
+                      "statusCode": 429,
+                      "headers": headers,
+                      "body": json.dumps({"error": "This file has reached its maximum number of downloads."}),
+                  }
+              else:
+                  print(f"DOWNLOAD LIMIT OK - request_id={request_id} filename={filename} token={token} count={count} limit={MAX_DOWNLOADS_PER_FILE}")
+
+              scoped_client = get_ip_scoped_s3_client(source_ip)
+              params = {"Bucket": BUCKET_NAME, "Key": f"{request_id}/{filename}"}
+              # Only the actual download-button files force a browser "Save As"; everything
+              # else (dashboard HTML, preview image, chunk/manifest/all_points data) renders inline.
+              if filename in ATTACHMENT_FILES:
+                  params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+              url = scoped_client.generate_presigned_url("get_object", Params=params, ExpiresIn=60)
+              return {"statusCode": 302, "headers": {**headers, "Location": url}, "body": ""}
 
 
           def lambda_handler(event, context):
@@ -88,6 +295,20 @@ Resources:
               if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
                   return {"statusCode": 200, "headers": headers, "body": ""}
 
+              if event.get("requestContext", {}).get("routeKey", "").startswith("GET /Download/"):
+                  return handle_download(event, headers)
+
+              source_ip = event.get("requestContext", {}).get("http", {}).get("sourceIp")
+              allowed, count = check_rate_limit(source_ip)
+              if not allowed:
+                  print(f"RATE LIMIT BLOCKED - ip={source_ip} count={count} limit={RATE_LIMIT}")
+                  return {
+                      "statusCode": 429,
+                      "headers": headers,
+                      "body": json.dumps({"error": "Too many requests. Please try again later."}),
+                  }
+              print(f"RATE LIMIT OK - ip={source_ip} count={count} limit={RATE_LIMIT}")
+
               try:
                   request_id = event.get("pathParameters", {}).get("request_id")
                   print(f"Request ID: {request_id}")
@@ -101,6 +322,12 @@ Resources:
 
                   print(f"Generating signed URLs for request_id: {request_id}")
 
+                  # Fresh per-generation token: each "Get results" click gets its own
+                  # independent set of download-limit counters (see check_download_limit).
+                  token = secrets.token_urlsafe(8)
+                  scoped_client = get_ip_scoped_s3_client(source_ip)
+                  api_base = f"https://{event['requestContext']['apiId']}.execute-api.{AWS_REGION}.amazonaws.com"
+
                   # List all files in the request_id folder
                   try:
                       response = s3_client.list_objects_v2(
@@ -110,48 +337,14 @@ Resources:
                       print(f"Error listing objects: {e}")
                       response = {"Contents": []}
 
-                  # Generate pre-signed URLs for standard files
+                  # All files are routed through /Download so every access is logged to
+                  # CloudWatch; only the 3 download-button files + dashboard enforce a click cap.
                   urls = {
-                      "preview": s3_client.generate_presigned_url(
-                          "get_object",
-                          Params={"Bucket": BUCKET_NAME, "Key": f"{request_id}/result_map.png"},
-                          ExpiresIn=3600,
-                      ),
-                      "geojson": s3_client.generate_presigned_url(
-                          "get_object",
-                          Params={
-                              "Bucket": BUCKET_NAME,
-                              "Key": f"{request_id}/pareto_frontier.geojson",
-                              "ResponseContentDisposition": 'attachment; filename="pareto_frontier.geojson"',
-                          },
-                          ExpiresIn=3600,
-                      ),
-                      "rank": s3_client.generate_presigned_url(
-                          "get_object",
-                          Params={
-                              "Bucket": BUCKET_NAME,
-                              "Key": f"{request_id}/pareto_rank.tif",
-                              "ResponseContentDisposition": 'attachment; filename="pareto_rank.tif"',
-                          },
-                          ExpiresIn=3600,
-                      ),
-                      "percentiles": s3_client.generate_presigned_url(
-                          "get_object",
-                          Params={
-                              "Bucket": BUCKET_NAME,
-                              "Key": f"{request_id}/pareto_percentiles.tif",
-                              "ResponseContentDisposition": 'attachment; filename="pareto_percentiles.tif"',
-                          },
-                          ExpiresIn=3600,
-                      ),
-                      "dashboard": s3_client.generate_presigned_url(
-                          "get_object",
-                          Params={
-                              "Bucket": BUCKET_NAME,
-                              "Key": f"{request_id}/interactive_dashboard.html",
-                          },
-                          ExpiresIn=3600,
-                      ),
+                      "preview": f"{api_base}/Download/{request_id}/result_map.png?token={token}",
+                      "geojson": f"{api_base}/Download/{request_id}/pareto_frontier.geojson?token={token}",
+                      "rank": f"{api_base}/Download/{request_id}/pareto_rank.tif?token={token}",
+                      "percentiles": f"{api_base}/Download/{request_id}/pareto_percentiles.tif?token={token}",
+                      "dashboard": f"{api_base}/Download/{request_id}/interactive_dashboard.html?token={token}",
                   }
 
                   # Find and add pre-signed URLs for chunked files
@@ -169,7 +362,10 @@ Resources:
                           # Add chunks_manifest.json
                           if filename == "chunks_manifest.json":
                               manifest_found = True
-                              urls["chunks_manifest"] = s3_client.generate_presigned_url(
+                              # Direct presigned URL (not /Download): the dashboard loads this via
+                              # same-origin JS fetch() from S3, and a cross-origin API Gateway hop
+                              # breaks that without CORS configured on the bucket.
+                              urls["chunks_manifest"] = scoped_client.generate_presigned_url(
                                   "get_object",
                                   Params={"Bucket": BUCKET_NAME, "Key": key},
                                   ExpiresIn=3600,
@@ -177,7 +373,7 @@ Resources:
 
                           # Add all chunk files (chunk_0000.geojson, chunk_0001.geojson, etc.)
                           elif filename.startswith("chunk_") and filename.endswith(".geojson"):
-                              chunk_url = s3_client.generate_presigned_url(
+                              chunk_url = scoped_client.generate_presigned_url(
                                   "get_object",
                                   Params={"Bucket": BUCKET_NAME, "Key": key},
                                   ExpiresIn=3600,
@@ -198,7 +394,7 @@ Resources:
                           s3_client.head_object(
                               Bucket=BUCKET_NAME, Key=f"{request_id}/all_points.geojson"
                           )
-                          urls["all_points_geojson"] = s3_client.generate_presigned_url(
+                          urls["all_points_geojson"] = scoped_client.generate_presigned_url(
                               "get_object",
                               Params={
                                   "Bucket": BUCKET_NAME,
@@ -268,6 +464,14 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: "GET /GeneratePresignedUrl/{request_id}"
+      Target: !Sub "integrations/${LambdaIntegration}"
+
+  DownloadFileRoute:
+    Type: AWS::ApiGatewayV2::Route
+    DependsOn: LambdaIntegration
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "GET /Download/{request_id}/{filename}"
       Target: !Sub "integrations/${LambdaIntegration}"
 
   LambdaInvokePermission:

@@ -48,7 +48,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch(`${API_ENDPOINT}/${requestId}`);
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 429) {
+          throw new Error("You've made too many requests. Please wait a few minutes and try again.");
+        }
+        throw new Error(`Something went wrong while loading your results (status ${response.status}). Please try again later.`);
       }
 
       const urls = await response.json();
@@ -61,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Show download buttons
       buttons.style.display = "flex";
+      document.getElementById("resultsDivider").style.display = "block";
 
       document.getElementById("downloadGeojson").onclick = () => {
         triggerDownload(urls.geojson, "pareto_frontier.geojson");
@@ -71,28 +75,37 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("downloadPercentiles").onclick = () => {
         triggerDownload(urls.percentiles, "pareto_percentiles.tif");
       };
-      // document.getElementById("viewMaplibre").onclick = () => {
-      //   window.open(urls.dashboard, "_blank");
-      // };
+
+      // Text version (accessible caption) of the result map
+      document.getElementById("textVersionTitle").textContent =
+        buildResultMapTitle(selectedMineral, selectedPriorities);
+
+      const geojsonLink = document.getElementById("textVersionGeojsonLink");
+      geojsonLink.href = urls.geojson;
+      geojsonLink.setAttribute("download", "pareto_frontier.geojson");
+
+      const rankLink = document.getElementById("textVersionRankLink");
+      rankLink.href = urls.rank;
+      rankLink.setAttribute("download", "pareto_rank.tif");
+
+      const percentilesLink = document.getElementById("textVersionPercentilesLink");
+      percentilesLink.href = urls.percentiles;
+      percentilesLink.setAttribute("download", "pareto_percentiles.tif");
 
       // ✅ FIXED: Use hash (#) instead of query parameter (?)
+      const dashboardUrl = buildDashboardUrl(urls);
       document.getElementById("viewMaplibre").onclick = () => {
-        if (urls.has_chunks) {
-          // Chunked dashboard - pass manifest and chunks via hash
-          const data = {
-            manifest: urls.chunks_manifest,
-            chunks: urls.chunks
-          };
-          const dashboardUrl = `${urls.dashboard}#${encodeURIComponent(JSON.stringify(data))}`;
-          console.log("Opening chunked dashboard");
-          window.open(dashboardUrl, "_blank");
-        } else {
-          // Single file dashboard - pass dataUrl via hash
-          const dashboardUrl = `${urls.dashboard}#${encodeURIComponent(urls.all_points_geojson)}`;
-          console.log("Opening single-file dashboard with data URL");
-          window.open(dashboardUrl, "_blank");
-        }
+        console.log(urls.has_chunks ? "Opening chunked dashboard" : "Opening single-file dashboard with data URL");
+        window.open(dashboardUrl, "_blank");
       };
+
+      // Make the text-version link a real, directly clickable dashboard link
+      const dashboardLink = document.getElementById("textVersionDashboardLink");
+      dashboardLink.href = dashboardUrl;
+      dashboardLink.target = "_blank";
+      dashboardLink.rel = "noopener noreferrer";
+
+      document.getElementById("textVersionDetails").style.display = "block";
 
     } catch (error) {
       alert(`❌ Error: ${error.message}`);
@@ -100,6 +113,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// Short mineral names matching the notebook/backend's title wording
+const MINERAL_SHORT_NAMES = {
+  carbonatite_ree: "carbonatite REE",
+  cd_zinc: "CD zinc",
+  graphite: "graphite",
+  magmatic_nickel: "magmatic nickel",
+  mvt_zinc: "MVT zinc",
+  pegmatite_lithium: "pegmatite-hosted lithium"
+};
+
+const PRIORITY_LABELS = {
+  infra: "infrastructure cost",
+  protected: "protected areas",
+  species: "critical habitat"
+};
+
+// Builds the dashboard URL, embedding chunked or single-file data via the hash
+function buildDashboardUrl(urls) {
+  if (urls.has_chunks) {
+    const data = { manifest: urls.chunks_manifest, chunks: urls.chunks };
+    return `${urls.dashboard}#${encodeURIComponent(JSON.stringify(data))}`;
+  }
+  return `${urls.dashboard}#${encodeURIComponent(urls.all_points_geojson)}`;
+}
+
+// Builds the dynamic title used as the Result Map's text-version caption
+function buildResultMapTitle(mineral, priorities) {
+  const dynamicParts = [];
+  if (mineral) {
+    dynamicParts.push(MINERAL_SHORT_NAMES[mineral] || mineral.replace(/_/g, " "));
+  }
+  ["infra", "protected", "species"].forEach((key) => {
+    if (priorities.includes(key)) dynamicParts.push(PRIORITY_LABELS[key]);
+  });
+
+  const baseTitle = "Critical mineral priority map (2 km resolution)";
+  return dynamicParts.length ? `${baseTitle} - ${dynamicParts.join(" - ")}` : baseTitle;
+}
 
 // Converts ArrayBuffer → hex string
 function bufferToHex(buffer) {

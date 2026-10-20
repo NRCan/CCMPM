@@ -3,10 +3,10 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Canada ESG Priority Mapper - Canada.ca</title>
+  <title>Canada critical mineral priority mapper</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Upload and process geospatial priority data for mineral assessments.">
-
+  <meta name="description"
+    content="Interactive tool for prioritizing Canadian critical mineral exploration areas by balancing mineral potential, economic viability and ESG factors.">
 
   <link rel="stylesheet" href="libraries/GCWeb/css/theme.min.css">
   <noscript>
@@ -23,7 +23,7 @@
         <section id="wb-lng" class="text-right">
           <h2 class="wb-inv">Language selection</h2>
           <ul class="list-inline margin-bottom-none">
-            <li><a lang="fr" href="#">Français</a></li>
+            <li><a lang="fr" href="index-fr.html">Français</a></li>
           </ul>
         </section>
       </div>
@@ -99,7 +99,7 @@
     </div>
 
   </main> -->
-  <main role="main" property="mainContentOfPage" class="container">
+  <main role="main" property="mainContentOfPage" class="container" style="margin-bottom: 20px;">
 
     <h1>Canada critical mineral priority mapper</h1>
 
@@ -150,7 +150,7 @@
           <pre id="status" style="margin-top: 10px; white-space: pre-wrap;"></pre> -->
         </section>
 
-        <hr style="border-top: 2px solid #ccc; margin: 30px 0;">
+        <hr id="resultsDivider" style="border-top: 2px solid #ccc; margin: 30px 0; display:none;">
 
         <!-- Download Buttons -->
         <div id="resultButtons" style="display:none; flex-direction: column; gap: 10px; align-items: flex-start;">
@@ -158,7 +158,7 @@
           <button id="downloadRank" class="btn btn-primary">Download pareto rank (GeoTIFF)</button>
           <button id="downloadPercentiles" class="btn btn-primary">Download pareto percentiles
             (GeoTIFF)</button>
-          <button id="viewMaplibre" class="btn btn-success">View interactive dashboard</button>
+          <button id="viewMaplibre" class="btn btn-success">Access interactive dashboard</button>
         </div>
 
       </div>
@@ -167,6 +167,21 @@
       <div class="col-md-7" style="padding-left: 30px;">
         <!-- <h2 style="text-align: center; margin-left: -30px;">Results</h2> -->
         <img id="previewImage" src="" alt="Result Map" class="img-responsive" style="display:none; margin-top:10px;" />
+
+        <details id="textVersionDetails" style="display:none; margin-top: 15px;">
+          <summary>Text version</summary>
+          <div style="margin-top: 10px;">
+            <p><strong>Title:</strong> <span id="textVersionTitle"></span></p>
+            <p>
+              This map visually depicts the Pareto rankings for the priorities selected.
+              For detailed information, access the
+              <a href="#" id="textVersionDashboardLink">interactive dashboard</a>
+              or download <a href="#" id="textVersionGeojsonLink">frontier</a>,
+              <a href="#" id="textVersionRankLink">pareto rank</a> and
+              <a href="#" id="textVersionPercentilesLink">pareto percentiles</a> data.
+            </p>
+          </div>
+        </details>
       </div>
     </div>
 
