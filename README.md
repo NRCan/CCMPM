@@ -13,12 +13,12 @@ There are two versions of this tool:
 1. Online version hosted by Natural Resources Canada [Access the online tool here](https://main.d33vprvvpv4hdi.amplifyapp.com/). This version is limited to the supplied stock data layers for mineral prospectivity, economic constraints, and ESG layers.
 2. Downloadable JupyterNotebook which allows for users to upload their own data layers.
 
-Both versions have similar plotting and visualization functionalities, and it only the ability for users to provide their own data layers (downloadable JupyterNotebook/Colab). 
+Both versions have similar plotting and visualization functionalities, and the only difference is the ability for users to provide their own data layers (downloadable JupyterNotebook/Colab). 
 
 ---
 ## Background
 
-Traditional approaches to multi-objective decision-making require decision-makers to assign subjective weights or thresholds to criteria (e.g., weighted criteria optimisation), which can introduce bias. **Pareto ranking** avoids this by identifying the set of options that are not dominated by any other across all criteria simultaneously. Spatially, this can be thought of comparing all points on the map in terms of the chosen criteria. Some areas may be more favourable for exploration, and others more favourable for reducing environmental risk. By comparing all points, a range of choices exist. This allows exploration targets to be prioritised based on balanced performance rather than optimised performance on any single dimension.
+Traditional approaches to multi-objective decision-making require decision-makers to assign subjective weights or thresholds to criteria (e.g., weighted criteria optimisation), which can introduce bias. **Pareto ranking** avoids this by identifying the set of options that are not dominated by any other across all criteria simultaneously. Spatially, this can be thought of as comparing all points on the map in terms of the chosen criteria. Some areas may be more favourable for exploration, and others more favourable for reducing environmental risk. By comparing all points, a range of choices exist. This allows exploration targets to be prioritised based on balanced performance rather than optimised performance on any single dimension.
 
 This application implements the methodology described in:
 > **Walsh, S.D.C., Haynes, M.W. & Wang, C. (2024)**. *Multicriteria resource potential mapping: balancing geological, economic & environmental factors.* Exploring for the Future: Extended Abstracts. Geoscience Australia. [doi:10.26186/149250](https://doi.org/10.26186/149250)
@@ -38,7 +38,7 @@ The Pareto algorithm is an iterative ranking algorithm, where the locations are 
 
 - ✅ **Pareto ranking engine** — fast implementation supporting 1M+ points, handling both positive criteria (higher = better) and negative criteria (higher = worse)
 - ✅ **Stock Canadian Critical minerals prospectivity and ESG data** — pre-loaded mineral potential and ESG layers (see below)
-- ✅ **Custom data support** — upload any geospatial raster or vector data to run your own analysis (JypterNotebook features)
+- ✅ **Custom data support** — upload any geospatial raster or vector data to run your own analysis (JupyterNotebook features)
 - ✅ **Interactive trade-off visualisation** — scatter plots of the Pareto frontier coloured by average relative rank under varying criteria weightings
 
 ---
@@ -174,7 +174,7 @@ The application ships with the following pre-loaded data layers:
 
 ### Bring Your Own Data
 
-You can replace or supplement the built-in layers with any geospatial datasets in standard formats in the Juypter Notebook version. 
+You can replace or supplement the built-in layers with any geospatial datasets in standard formats in the Jupyter Notebook version. 
 
 **Input Formats:**
 - **Rasters**: GeoTIFF (.tif, .tiff)
@@ -205,7 +205,7 @@ This project is developed by Natural Resources Canada.
 **Data Licensing:**
 - Mineral prospectivity models: Open Government License - Canada
 - ESG layers: Various (see individual dataset links)
-- Custom data: Responsibility of user to ensure appropriate usage rights
+- Custom data: Responsibility of the user to ensure appropriate usage rights
 
 **Code Licensing:**
 - Apache 2.0
