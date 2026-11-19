@@ -24,11 +24,37 @@ Parameters:
     MinValue: 5
     Description: Max GeneratePresignedUrl requests allowed per client IP per trailing 5-minute window (set low for testing).
 
+  DownloadRateLimitPerFiveMinutes:
+    Type: Number
+    Default: 60
+    MinValue: 10
+    Description: Max /Download requests (preview, dashboard, file downloads) allowed per client IP per 5-minute window.
+
   MaxDownloadsPerFile:
     Type: Number
     Default: 10
     MinValue: 1
-    Description: Max total times each result file (geojson/rank/percentiles) can be downloaded, across all users - never resets.
+    Description: Max times each result file (geojson/rank/percentiles) can be downloaded per "Get results" token; resets with each new token and after 24h.
+
+  Language:
+    Type: String
+    Default: en
+    AllowedValues: [en, fr]
+    Description: Language of user-facing Lambda error messages.
+
+  AdditionalAllowedOrigins:
+    Type: String
+    Default: ""
+    Description: >
+      Optional comma-separated list of extra browser origins allowed to call the API via CORS
+      (e.g. custom domains like https://ccmpm.example.canada.ca). The stack's own Amplify domain
+      is always allowed.
+
+# ──────────────────────────────────────────────────────────────────────────────
+Conditions:
+# ──────────────────────────────────────────────────────────────────────────────
+
+  HasAdditionalAllowedOrigins: !Not [!Equals [!Ref AdditionalAllowedOrigins, ""]]
 
 # ──────────────────────────────────────────────────────────────────────────────
 Resources:
@@ -86,6 +112,8 @@ Resources:
 
   PresignRole:
     Type: AWS::IAM::Role
+    # IAM rejects a trust-policy principal that doesn't exist yet, so wait for the Lambda role.
+    DependsOn: LambdaExecutionRole
     Properties:
       RoleName: !Sub "${AppName}-presign-role"
       AssumeRolePolicyDocument:
@@ -96,6 +124,8 @@ Resources:
               # Constructed (not !GetAtt) to avoid a circular dependency with LambdaExecutionRole's policy.
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/${AppName}-lambda-role"
             Action: sts:AssumeRole
+      # Presigned URLs die when their signing credentials expire; role chaining caps sessions at 1h.
+      MaxSessionDuration: 3600
       Policies:
         - PolicyName: S3GetObjectOnly
           PolicyDocument:
@@ -140,8 +170,10 @@ Resources:
           BUCKET_NAME: !Ref OutputS3Bucket
           RATE_LIMIT_TABLE: !Ref RateLimitTable
           RATE_LIMIT_PER_FIVE_MIN: !Ref RateLimitPerFiveMinutes
+          DOWNLOAD_RATE_LIMIT_PER_FIVE_MIN: !Ref DownloadRateLimitPerFiveMinutes
           MAX_DOWNLOADS_PER_FILE: !Ref MaxDownloadsPerFile
           PRESIGN_ROLE_ARN: !GetAtt PresignRole.Arn
+          LANGUAGE: !Ref Language
       Code:
         ZipFile: |
           import json
@@ -149,17 +181,33 @@ Resources:
           import time
           import secrets
           import boto3
+          from botocore.config import Config
           from botocore.exceptions import ClientError
 
           BUCKET_NAME = os.environ.get("BUCKET_NAME", "aecid-outputfiles-dev")
           RATE_LIMIT_TABLE = os.environ.get("RATE_LIMIT_TABLE")
           RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_FIVE_MIN", "5"))
+          DOWNLOAD_RATE_LIMIT = int(os.environ.get("DOWNLOAD_RATE_LIMIT_PER_FIVE_MIN", "60"))
           MAX_DOWNLOADS_PER_FILE = int(os.environ.get("MAX_DOWNLOADS_PER_FILE", "10"))
           PRESIGN_ROLE_ARN = os.environ.get("PRESIGN_ROLE_ARN")
           WINDOW_SECONDS = 300
           AWS_REGION = os.environ.get("AWS_REGION", "ca-central-1")
+          MESSAGES = {
+              "en": {
+                  "too_many": "Too many requests. Please try again later.",
+                  "max_downloads": "This file has reached its maximum number of downloads.",
+              },
+              "fr": {
+                  "too_many": "Nombre de requêtes trop élevé. Veuillez réessayer plus tard.",
+                  "max_downloads": "Ce fichier a atteint son nombre maximal de téléchargements.",
+              },
+          }[os.environ.get("LANGUAGE", "en")]
 
-          s3_client = boto3.client("s3", region_name="ca-central-1")
+          # Regional endpoint: the global s3.amazonaws.com host misroutes newly created buckets to us-east-1.
+          S3_ENDPOINT = f"https://s3.{AWS_REGION}.amazonaws.com"
+          S3_CONFIG = Config(signature_version="s3v4", s3={"addressing_style": "virtual"})
+
+          s3_client = boto3.client("s3", region_name=AWS_REGION, endpoint_url=S3_ENDPOINT, config=S3_CONFIG)
           sts_client = boto3.client("sts", region_name="ca-central-1")
           dynamodb = boto3.resource("dynamodb", region_name="ca-central-1")
           rate_limit_table = dynamodb.Table(RATE_LIMIT_TABLE) if RATE_LIMIT_TABLE else None
@@ -184,7 +232,7 @@ Resources:
                       RoleArn=PRESIGN_ROLE_ARN,
                       RoleSessionName="presign",
                       Policy=json.dumps(session_policy),
-                      DurationSeconds=900,
+                      DurationSeconds=3600,
                   )["Credentials"]
               except ClientError as e:
                   print(f"Could not scope presigned URL to {source_ip}, falling back: {e}")
@@ -192,20 +240,22 @@ Resources:
 
               return boto3.client(
                   "s3",
-                  region_name="ca-central-1",
+                  region_name=AWS_REGION,
+                  endpoint_url=S3_ENDPOINT,
+                  config=S3_CONFIG,
                   aws_access_key_id=creds["AccessKeyId"],
                   aws_secret_access_key=creds["SecretAccessKey"],
                   aws_session_token=creds["SessionToken"],
               )
 
 
-          def check_rate_limit(source_ip):
+          def check_rate_limit(source_ip, limit=RATE_LIMIT, prefix=""):
               """Returns (allowed, request_count) for source_ip in the current 5-min window."""
               if not rate_limit_table or not source_ip:
                   return True, 0
 
               window_start = int(time.time() // WINDOW_SECONDS) * WINDOW_SECONDS
-              key = f"{source_ip}#{window_start}"
+              key = f"{prefix}{source_ip}#{window_start}"
               expires_at = window_start + WINDOW_SECONDS + 60
 
               response = rate_limit_table.update_item(
@@ -215,7 +265,7 @@ Resources:
                   ReturnValues="UPDATED_NEW",
               )
               count = int(response["Attributes"]["req_count"])
-              return count <= RATE_LIMIT, count
+              return count <= limit, count
 
 
           def check_download_limit(request_id, filename, token):
@@ -260,6 +310,15 @@ Resources:
               if not token and not is_unlimited_file(filename):
                   return {"statusCode": 400, "headers": headers, "body": json.dumps({"error": "Invalid or expired download link"})}
 
+              ip_allowed, ip_count = check_rate_limit(source_ip, DOWNLOAD_RATE_LIMIT, prefix="dlip#")
+              if not ip_allowed:
+                  print(f"DOWNLOAD RATE LIMIT BLOCKED - ip={source_ip} count={ip_count} limit={DOWNLOAD_RATE_LIMIT}")
+                  return {
+                      "statusCode": 429,
+                      "headers": {**headers, "Content-Type": "application/json; charset=utf-8"},
+                      "body": json.dumps({"error": MESSAGES["too_many"]}, ensure_ascii=False),
+                  }
+
               allowed, count = check_download_limit(request_id, filename, token)
               if is_unlimited_file(filename):
                   print(f"DOWNLOAD LOG (unlimited) - request_id={request_id} filename={filename} count={count}")
@@ -267,8 +326,8 @@ Resources:
                   print(f"DOWNLOAD LIMIT BLOCKED - request_id={request_id} filename={filename} token={token} count={count} limit={MAX_DOWNLOADS_PER_FILE}")
                   return {
                       "statusCode": 429,
-                      "headers": headers,
-                      "body": json.dumps({"error": "This file has reached its maximum number of downloads."}),
+                      "headers": {**headers, "Content-Type": "application/json; charset=utf-8"},
+                      "body": json.dumps({"error": MESSAGES["max_downloads"]}, ensure_ascii=False),
                   }
               else:
                   print(f"DOWNLOAD LIMIT OK - request_id={request_id} filename={filename} token={token} count={count} limit={MAX_DOWNLOADS_PER_FILE}")
@@ -286,11 +345,8 @@ Resources:
           def lambda_handler(event, context):
               print("Received event:", json.dumps(event, default=str))
 
-              headers = {
-                  "Access-Control-Allow-Origin": "*",
-                  "Access-Control-Allow-Methods": "GET, OPTIONS",
-                  "Access-Control-Allow-Headers": "Content-Type",
-              }
+              # CORS headers are set by API Gateway's CorsConfiguration (origin allow-list).
+              headers = {}
 
               if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
                   return {"statusCode": 200, "headers": headers, "body": ""}
@@ -304,8 +360,8 @@ Resources:
                   print(f"RATE LIMIT BLOCKED - ip={source_ip} count={count} limit={RATE_LIMIT}")
                   return {
                       "statusCode": 429,
-                      "headers": headers,
-                      "body": json.dumps({"error": "Too many requests. Please try again later."}),
+                      "headers": {**headers, "Content-Type": "application/json; charset=utf-8"},
+                      "body": json.dumps({"error": MESSAGES["too_many"]}, ensure_ascii=False),
                   }
               print(f"RATE LIMIT OK - ip={source_ip} count={count} limit={RATE_LIMIT}")
 
@@ -433,9 +489,14 @@ Resources:
     Properties:
       Name: !Sub "${AppName}-api"
       ProtocolType: HTTP
+      # API Gateway answers preflights and sets CORS headers itself, overriding any from Lambda.
       CorsConfiguration:
-        AllowOrigins:
-          - "*"
+        AllowOrigins: !Split
+          - ","
+          - !If
+            - HasAdditionalAllowedOrigins
+            - !Sub "https://main.${AmplifyApp.DefaultDomain},${AdditionalAllowedOrigins}"
+            - !Sub "https://main.${AmplifyApp.DefaultDomain}"
         AllowMethods:
           - GET
           - OPTIONS
@@ -510,9 +571,8 @@ Resources:
       #   - Source: "/<*>"
       #     Target: "/index.html"
       #     Status: "404-200"
-      EnvironmentVariables:
-        - Name: API_ENDPOINT
-          Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/GeneratePresignedUrl"
+      # No API_ENDPOINT env var here: deploy.sh patches it into app.js, and referencing
+      # HttpApi would create a circular dependency with the API's CORS allow-list.
 
   AmplifyMainBranch:
     Type: AWS::Amplify::Branch
@@ -520,9 +580,6 @@ Resources:
       AppId: !GetAtt AmplifyApp.AppId
       BranchName: main
       EnableAutoBuild: false
-      EnvironmentVariables:
-        - Name: API_ENDPOINT
-          Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/GeneratePresignedUrl"
 
 # ──────────────────────────────────────────────────────────────────────────────
 Outputs:

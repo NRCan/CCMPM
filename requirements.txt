@@ -1,4 +1,5 @@
 boto3==1.40.4
+brotli>=1.2.1
 geopandas==1.1.1
 ipyfilechooser==0.6.0
 ipywidgets==8.1.7

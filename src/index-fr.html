@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr" class="no-js">
+
+<head>
+    <meta charset="utf-8">
+    <title>Carte des priorités en matière de minéraux critiques du Canada</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <meta name="description"
+        content="Outil interactif permettant de déterminer quelles sont les zones prioritaires pour l'exploration de minéraux critiques au Canada, en tenant compte à la fois du potentiel minier, de la viabilité économique et des facteurs environnementaux, sociaux et de gouvernance (ESG).">
+
+    <link rel="stylesheet" href="libraries/GCWeb/css/theme.min.css">
+    <noscript>
+        <link rel="stylesheet" href="libraries/GCWeb/css/noscript.min.css" />
+    </noscript>
+
+</head>
+
+<body vocab="http://schema.org/" typeof="WebPage">
+
+    <header role="banner" id="wb-bnr" class="container">
+        <div id="wb-bar" class="row">
+            <div class="col-md-12">
+                <section id="wb-lng" class="text-right">
+                    <h2 class="wb-inv">Sélection de la langue</h2>
+                    <ul class="list-inline margin-bottom-none">
+                        <li><a lang="en" href="index.html">English</a></li>
+                    </ul>
+                </section>
+            </div>
+        </div>
+        <div class="row">
+            <div class="brand col-xs-6">
+                <a href="https://www.canada.ca/fr.html">
+                    <img src="libraries/GCWeb/assets/sig-blk-fr.svg" alt="Gouvernement du Canada" />
+                </a>
+            </div>
+        </div>
+        <hr />
+    </header>
+
+    <main role="main" property="mainContentOfPage" class="container" style="margin-bottom: 20px;">
+
+        <h1>Carte des priorités en matière de minéraux critiques du Canada</h1>
+
+        <div class="row" style="margin-top: 20px;">
+            <!-- GAUCHE : commandes et état -->
+            <div class="col-md-5" style="border-right: 2px solid #ccc; padding-right: 30px;">
+
+                <!-- Sélection du minéral -->
+                <section>
+                    <h2>Sélectionnez le type de potentiel minier</h2>
+                    <div class="form-group">
+                        <select id="mineral" class="form-control">
+                            <option value="carbonatite_ree">Éléments des terres rares (ETR) encaissés dans des
+                                carbonatites</option>
+                            <option value="cd_zinc">Zinc à dominante clastique (CD)</option>
+                            <option value="graphite">Graphite</option>
+                            <option value="magmatic_nickel">Nickel magmatique</option>
+                            <option value="mvt_zinc">Zinc de type Mississippi-Valley (MVT)</option>
+                            <option value="pegmatite_lithium">Pegmatites lithinifères</option>
+                        </select>
+                    </div>
+                </section>
+
+                <!-- Cases à cocher des priorités -->
+                <section style="margin-top: 20px;">
+                    <h2>Sélectionnez d'autres priorités</h2>
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" id="infrastructure"> Coûts d'infrastructure
+                        </label>
+                    </div>
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" id="protectedAreas"> Analyse des lacunes en matière d'aires protégées
+                        </label>
+                    </div>
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" id="speciesRisk"> Habitat d'espèces en péril
+                        </label>
+                    </div>
+                </section>
+
+                <!-- Bouton de traitement et état -->
+                <section style="margin-top: 20px;">
+                    <button id="uploadBtn" class="btn btn-success">Voir les résultats</button>
+                </section>
+
+                <hr id="resultsDivider" style="border-top: 2px solid #ccc; margin: 30px 0; display:none;">
+
+                <!-- Boutons de téléchargement -->
+                <div id="resultButtons"
+                    style="display:none; flex-direction: column; gap: 10px; align-items: flex-start;">
+                    <button id="downloadGeojson" class="btn btn-primary">Télécharger le front de Pareto
+                        (GeoJSON)</button>
+                    <button id="downloadRank" class="btn btn-primary">Télécharger le classement de Pareto
+                        (GeoTIFF)</button>
+                    <button id="downloadPercentiles" class="btn btn-primary">Télécharger les rangs centiles de Pareto
+                        (GeoTIFF)</button>
+                    <button id="viewMaplibre" class="btn btn-success">Accéder au tableau de bord interactif</button>
+                </div>
+
+            </div>
+
+            <!-- DROITE : image d'aperçu -->
+            <div class="col-md-7" style="padding-left: 30px;">
+                <img id="previewImage" src="" alt="Carte des résultats" class="img-responsive"
+                    style="display:none; margin-top:10px;" />
+
+                <details id="textVersionDetails" style="display:none; margin-top: 15px;">
+                    <summary>Version textuelle</summary>
+                    <div style="margin-top: 10px;">
+                        <p><strong>Titre :</strong> <span id="textVersionTitle"></span></p>
+                        <p>
+                            Cette carte présente le classement de Pareto pour les priorités sélectionnées.
+                            Pour plus de détails, veuillez consulter le
+                            <a href="#" id="textVersionDashboardLink">tableau de bord interactif</a>
+                            ou télécharger les données de <a href="#" id="textVersionGeojsonLink">front de Pareto</a>,
+                            <a href="#" id="textVersionRankLink">classement de Pareto</a> et
+                            <a href="#" id="textVersionPercentilesLink">rangs centiles de Pareto</a>.
+                        </p>
+                    </div>
+                </details>
+            </div>
+        </div>
+
+    </main>
+
+    <footer id="wb-info">
+        <h2 class="wb-inv">À propos de ce site</h2>
+
+        <div class="gc-contextual">
+            <div class="container">
+                <nav aria-labelledby="gc-department-menu">
+                    <h3 id="gc-department-menu">Ressources naturelles Canada</h3>
+                    <ul class="list-col-xs-1 list-col-sm-2 list-col-md-3">
+                        <li><a href="https://contact-contactez.nrcan-rncan.gc.ca/index.cfm?lang=fra&amp;context=https%3A//admin.ressources-naturelles.canada.ca/accueil">Communiquez avec RNCan</a></li>
+                        <li><a href="https://www.canada.ca/fr/nouvelles/recherche-avancee-de-nouvelles/resultats-de-nouvelles.html?typ=newsreleases&amp;dprtmnt=naturalresourcescanada&amp;mnstr=&amp;start=&amp;end=">Nouvelles</a></li>
+                        <li><a href="https://ressources-naturelles.canada.ca/science-donnees/science-recherche/centre-recherche/carrieres">Carrières</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <div class="gc-main-footer">
+            <div class="container">
+                <nav aria-labelledby="gcweb-menu-footertop">
+                    <h3 id="gcweb-menu-footertop">Gouvernement du Canada</h3>
+                    <ul class="list-col-xs-1 list-col-sm-2 list-col-md-3">
+                        <li><a href="https://www.canada.ca/fr/contact.html">Toutes les coordonnées</a></li>
+                        <li><a href="https://www.canada.ca/fr/gouvernement/min.html">Ministères et organismes</a></li>
+                        <li><a href="https://www.canada.ca/fr/gouvernement/systeme.html">À propos du gouvernement</a></li>
+                    </ul>
+
+                    <h4><span class="wb-inv">Thèmes et sujets</span></h4>
+                    <ul class="list-unstyled colcount-sm-2 colcount-md-3">
+                        <li><a href="https://www.canada.ca/fr/services/emplois.html">Emplois</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/immigration-citoyennete.html">Immigration et citoyenneté</a></li>
+                        <li><a href="https://voyage.gc.ca/">Voyage et tourisme</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/entreprises.html">Entreprises</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/prestations.html">Prestations</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/sante.html">Santé</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/impots.html">Impôts</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/environnement.html">Environnement et ressources naturelles</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/defense.html">Sécurité nationale et défense</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/culture.html">Culture, histoire et sport</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/police.html">Services de police, justice et urgences</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/transport.html">Transport et infrastructure</a></li>
+                        <li><a href="https://www.international.gc.ca/world-monde/index.aspx?lang=fra">Le Canada et le monde</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/finance.html">Argent et finance</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/science.html">Science et innovation</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/autochtones.html">Autochtones</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/veterans.html">Vétérans et militaires</a></li>
+                        <li><a href="https://www.canada.ca/fr/services/jeunesse.html">Jeunesse</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <div class="gc-sub-footer">
+            <div class="container d-flex align-items-center">
+                <nav>
+                    <h3 class="wb-inv">Organisation du gouvernement du Canada</h3>
+                    <ul>
+                        <li><a href="https://www.canada.ca/fr/sociaux.html">Médias sociaux</a></li>
+                        <li><a href="https://www.canada.ca/fr/mobile.html">Applications mobiles</a></li>
+                        <li><a href="https://www.canada.ca/fr/gouvernement/a-propos.html">À propos de Canada.ca</a></li>
+                        <li><a href="https://ressources-naturelles.canada.ca/organisation/avis">Avis</a></li>
+                        <li><a href="https://www.canada.ca/fr/transparence/confidentialite.html">Confidentialité</a></li>
+                    </ul>
+                </nav>
+                <div class="wtrmrk align-self-end">
+                    <img src="libraries/GCWeb/assets/wmms-blk.svg" alt="Symbole du gouvernement du Canada">
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="libraries/wet-boew/js/jquery/2.2.4/jquery.min.js"></script>
+    <script src="libraries/wet-boew/js/wet-boew.min.js"></script>
+    <script src="libraries/GCWeb/js/theme.min.js"></script>
+    <script src="app-fr.js"></script>
+</body>
+
+</html>
